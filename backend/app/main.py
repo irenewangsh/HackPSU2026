@@ -80,18 +80,32 @@ async def mediate(body: AgentActionRequest):
 
 @app.post("/api/v1/feedback")
 async def feedback(body: UserFeedback):
+    outcome = body.outcome
+    if outcome is None:
+        if body.accepted is True:
+            outcome = "allow"
+        elif body.accepted is False:
+            outcome = "deny"
+        else:
+            outcome = "ask"
     high = body.scenario_category in (
         "financial_surface",
         "identity_or_finance",
         "secret_material",
-        "payment",
+        "make_payment",
     )
     await memory.record_feedback(
         category=body.scenario_category,
-        accepted=body.accepted,
+        accepted=outcome == "allow",
         high_risk=high,
     )
-    return {"ok": True, "recorded_under": body.scenario_category}
+    await memory.record_scenario_feedback(
+        task_type=body.task_type.value,
+        action_type=body.action_type.value,
+        sensitivity=body.sensitivity.value,
+        outcome=outcome,
+    )
+    return {"ok": True, "recorded_under": body.scenario_category, "outcome": outcome}
 
 
 @app.post("/api/v1/preferences/reset")

@@ -14,6 +14,10 @@
 
 #include "sentinel.h"
 
+#ifdef __linux__
+#include <sched.h>
+#endif
+
 #ifndef PATH_MAX
 #define PATH_MAX 4096
 #endif
@@ -275,4 +279,93 @@ int sentinel_sandbox_exec(const char *cwd, char *const argv[], char *stdout_out,
     *exit_code_out = -1;
   }
   return 0;
+}
+
+int sentinel_namespace_exec(const char *cwd, char *const argv[], int *exit_code_out,
+                            unsigned int timeout_sec) {
+#ifndef __linux__
+  (void)cwd;
+  (void)argv;
+  (void)exit_code_out;
+  (void)timeout_sec;
+  errno = ENOTSUP;
+  return -1;
+#else
+  pid_t pid;
+  int st = 0;
+  char binpath[PATH_MAX];
+  char *child_argv[256];
+  int argc = 0;
+  int i;
+  int waited_ms = 0;
+
+  if (!cwd || !argv || !argv[0] || !exit_code_out) {
+    errno = EINVAL;
+    return -1;
+  }
+  if (sentinel_resolve_binary(argv[0], binpath, sizeof(binpath)) != 0) {
+    return -1;
+  }
+  while (argv[argc] && argc < (int)(sizeof(child_argv) / sizeof(child_argv[0]) - 1)) {
+    argc++;
+  }
+  if (argc == 0 || argc >= (int)(sizeof(child_argv) / sizeof(child_argv[0]) - 1)) {
+    errno = E2BIG;
+    return -1;
+  }
+  for (i = 0; i < argc; i++) {
+    child_argv[i] = (i == 0) ? binpath : argv[i];
+  }
+  child_argv[argc] = NULL;
+
+  pid = fork();
+  if (pid < 0) {
+    return -1;
+  }
+  if (pid == 0) {
+    char *env[] = {"SENTINEL_SANDBOX=1", "PATH=/usr/bin:/bin:/usr/sbin:/sbin", NULL};
+    struct rlimit rl_cpu;
+    (void)signal(SIGPIPE, SIG_DFL);
+    if (timeout_sec > 0) {
+      rl_cpu.rlim_cur = (rlim_t)timeout_sec;
+      rl_cpu.rlim_max = (rlim_t)timeout_sec;
+      (void)setrlimit(RLIMIT_CPU, &rl_cpu);
+    }
+    /* Best-effort namespace isolation; if unsupported, fail closed in this branch. */
+    if (unshare(CLONE_NEWNS | CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWNET) != 0) {
+      _exit(126);
+    }
+    if (chdir(cwd) != 0) {
+      _exit(126);
+    }
+    (void)execve(binpath, child_argv, env);
+    _exit(127);
+  }
+
+  while (1) {
+    pid_t w = waitpid(pid, &st, WNOHANG);
+    if (w == pid) {
+      break;
+    }
+    if (w < 0 && errno != EINTR) {
+      break;
+    }
+    usleep(100000);
+    waited_ms += 100;
+    if (timeout_sec > 0 && waited_ms >= (int)timeout_sec * 1000) {
+      (void)kill(pid, SIGKILL);
+      (void)waitpid(pid, &st, 0);
+      break;
+    }
+  }
+
+  if (WIFEXITED(st)) {
+    *exit_code_out = WEXITSTATUS(st);
+  } else if (WIFSIGNALED(st)) {
+    *exit_code_out = 128 + WTERMSIG(st);
+  } else {
+    *exit_code_out = -1;
+  }
+  return 0;
+#endif
 }

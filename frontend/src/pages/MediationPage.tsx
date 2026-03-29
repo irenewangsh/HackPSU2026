@@ -1,19 +1,34 @@
 import { motion } from "framer-motion";
 import { Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { ActionType, AgentActionRequest, MediationResult } from "../api";
+import type {
+  ActionType,
+  AgentActionRequest,
+  MediationResult,
+  TaskType,
+} from "../api";
 import { mediate, sendFeedback } from "../api";
 
 const ACTION_OPTIONS: { value: ActionType; label: string }[] = [
   { value: "read_file", label: "Read file" },
-  { value: "write_file", label: "Write file" },
+  { value: "classify_file", label: "Classify file" },
   { value: "move_file", label: "Move file" },
-  { value: "open_url", label: "Open URL" },
-  { value: "shell", label: "Shell" },
-  { value: "upload", label: "Upload" },
-  { value: "form_submit", label: "Form submit" },
+  { value: "rename_file", label: "Rename file" },
+  { value: "upload_file", label: "Upload file" },
+  { value: "run_shell", label: "Run shell" },
+  { value: "open_website", label: "Open website" },
   { value: "login", label: "Login" },
-  { value: "payment", label: "Payment" },
+  { value: "paste_content", label: "Paste content" },
+  { value: "submit_form", label: "Submit form" },
+  { value: "make_payment", label: "Make payment" },
+  { value: "delete_file", label: "Delete file" },
+  { value: "share_data", label: "Share data" },
+];
+
+const TASK_OPTIONS: { value: TaskType; label: string }[] = [
+  { value: "general", label: "General" },
+  { value: "coursework_organizer", label: "Coursework organizer" },
+  { value: "financial_assistant", label: "Financial assistant" },
 ];
 
 export function MediationPage() {
@@ -22,6 +37,7 @@ export function MediationPage() {
   const [err, setErr] = useState<string | null>(null);
   const [form, setForm] = useState<AgentActionRequest>({
     action_type: "move_file",
+    task_type: "coursework_organizer",
     target_path: "/Users/demo/Downloads/CMPSC311_notes.pdf",
     mime_type: "application/pdf",
     overwrite: false,
@@ -77,6 +93,22 @@ export function MediationPage() {
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
       >
+        <label className="space-y-2 font-sans text-sm md:col-span-2">
+          <span className="text-forest-700/85">Task type</span>
+          <select
+            className={field}
+            value={form.task_type}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, task_type: e.target.value as TaskType }))
+            }
+          >
+            {TASK_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="space-y-2 font-sans text-sm md:col-span-2">
           <span className="text-forest-700/85">Action</span>
           <select
@@ -148,12 +180,39 @@ export function MediationPage() {
               onClick={() =>
                 sendFeedback({
                   request_id: result.request_id,
-                  accepted: true,
+                  outcome: "allow",
+                  task_type: (form.task_type || "general") as TaskType,
+                  action_type: form.action_type,
+                  sensitivity: result.sensitivity.level as
+                    | "low"
+                    | "medium"
+                    | "high"
+                    | "critical",
                   scenario_category: category,
                 })
               }
             >
-              Record allow
+              User allowed
+            </button>
+            <button
+              type="button"
+              className="rounded-lg border border-amber-300/90 bg-amber-50 px-3 py-1.5 font-sans text-xs font-medium text-amber-900"
+              onClick={() =>
+                sendFeedback({
+                  request_id: result.request_id,
+                  outcome: "ask",
+                  task_type: (form.task_type || "general") as TaskType,
+                  action_type: form.action_type,
+                  sensitivity: result.sensitivity.level as
+                    | "low"
+                    | "medium"
+                    | "high"
+                    | "critical",
+                  scenario_category: category,
+                })
+              }
+            >
+              User wanted review
             </button>
             <button
               type="button"
@@ -161,17 +220,85 @@ export function MediationPage() {
               onClick={() =>
                 sendFeedback({
                   request_id: result.request_id,
-                  accepted: false,
+                  outcome: "deny",
+                  task_type: (form.task_type || "general") as TaskType,
+                  action_type: form.action_type,
+                  sensitivity: result.sensitivity.level as
+                    | "low"
+                    | "medium"
+                    | "high"
+                    | "critical",
                   scenario_category: category,
                 })
               }
             >
-              Record deny
+              User denied
             </button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-4">
+            <Mini title="Risk score" value={String(result.risk.risk_score)} />
+            <Mini title="Sensitivity" value={result.sensitivity.level} />
+            <Mini title="Domain trust" value={result.sensitivity.domain_trust} />
+            <Mini title="Decision" value={result.decision.decision} />
           </div>
           <p className="font-sans text-sm leading-relaxed text-forest-800">
             {result.decision.user_message}
           </p>
+          <section className="rounded-xl border border-stone-200/70 bg-white/70 p-4">
+            <h3 className="font-sans text-sm font-semibold text-forest-900">
+              Permissions
+            </h3>
+            <pre className="mt-2 overflow-x-auto font-mono text-[11px] text-forest-800">
+              {JSON.stringify(result.decision.permissions, null, 2)}
+            </pre>
+          </section>
+          <section className="rounded-xl border border-stone-200/70 bg-white/70 p-4">
+            <h3 className="font-sans text-sm font-semibold text-forest-900">
+              Safety transforms
+            </h3>
+            <p className="mt-2 font-mono text-xs text-forest-800">
+              {result.decision.transforms.join(", ")}
+            </p>
+          </section>
+          <section className="rounded-xl border border-stone-200/70 bg-white/70 p-4">
+            <h3 className="font-sans text-sm font-semibold text-forest-900">
+              Sensitivity analysis
+            </h3>
+            <pre className="mt-2 overflow-x-auto font-mono text-[11px] text-forest-800">
+              {JSON.stringify(
+                {
+                  categories: result.sensitivity.categories,
+                  signals: result.sensitivity.signals,
+                },
+                null,
+                2
+              )}
+            </pre>
+          </section>
+          <section className="rounded-xl border border-stone-200/70 bg-white/70 p-4">
+            <h3 className="font-sans text-sm font-semibold text-forest-900">
+              Risk rationale
+            </h3>
+            <pre className="mt-2 overflow-x-auto font-mono text-[11px] text-forest-800">
+              {JSON.stringify(result.risk.reasons, null, 2)}
+            </pre>
+          </section>
+          <section className="rounded-xl border border-stone-200/70 bg-white/70 p-4">
+            <h3 className="font-sans text-sm font-semibold text-forest-900">
+              Masked preview
+            </h3>
+            <p className="mt-2 whitespace-pre-wrap font-mono text-xs text-forest-800">
+              {result.masked_preview || "(none)"}
+            </p>
+          </section>
+          <section className="rounded-xl border border-stone-200/70 bg-white/70 p-4">
+            <h3 className="font-sans text-sm font-semibold text-forest-900">
+              Preference memory
+            </h3>
+            <pre className="mt-2 overflow-x-auto font-mono text-[11px] text-forest-800">
+              {JSON.stringify(result.preference_memory || {}, null, 2)}
+            </pre>
+          </section>
           <div className="grid gap-3 md:grid-cols-2">
             <div className="rounded-xl border border-stone-200/80 bg-paper-2/90 p-4 font-mono text-xs text-forest-800">
               <p className="text-stone-500">policy_digest</p>
@@ -192,6 +319,17 @@ export function MediationPage() {
           </div>
         </motion.div>
       )}
+    </div>
+  );
+}
+
+function Mini({ title, value }: { title: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-stone-200/80 bg-paper-2/90 p-3">
+      <p className="font-sans text-[11px] uppercase tracking-wide text-stone-500">
+        {title}
+      </p>
+      <p className="mt-1 font-mono text-sm text-forest-900">{value}</p>
     </div>
   );
 }

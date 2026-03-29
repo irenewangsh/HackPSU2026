@@ -24,3 +24,10 @@ async def authority_timeline(limit: int = 100):
     assert _memory is not None
     rows = await _memory.list_authority_timeline(limit=limit)
     return {"items": rows}
+
+
+@router.get("/preference-memory")
+async def preference_memory(limit: int = 80):
+    assert _memory is not None
+    rows = await _memory.list_scenario_profiles(limit=limit)
+    return {"items": rows}

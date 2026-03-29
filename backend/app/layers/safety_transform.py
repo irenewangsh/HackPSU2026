@@ -1,38 +1,44 @@
-"""Layer 5 — Safety Transform: intermediate states beyond allow/deny."""
+"""Layer 5 — Safety Transform: suggest safer execution strategy."""
 
-from app.models.schemas import ActionType, DecisionType, PermissionDecision, TransformKind
+from app.models.schemas import DecisionType, SensitivityLevel, TransformKind
 
 
 class SafetyTransformLayer:
     def propose(
         self,
         *,
-        action: ActionType,
         decision: DecisionType,
-        need_mask: bool,
-        need_isolate: bool,
-        time_limit: bool,
+        sensitivity: SensitivityLevel,
     ) -> list[TransformKind]:
-        kinds: list[TransformKind] = []
-        if decision == DecisionType.DENY:
-            return [TransformKind.NONE]
-        if need_mask:
-            kinds.append(TransformKind.MASK_PII)
-        if action in (ActionType.READ_FILE, ActionType.OPEN_URL) and need_mask:
-            kinds.append(TransformKind.SUMMARY_ONLY)
-        if action == ActionType.WRITE_FILE and need_isolate:
-            kinds.append(TransformKind.SANDBOX_COPY)
-        if action in (ActionType.FORM_SUBMIT, ActionType.PAYMENT):
-            kinds.append(TransformKind.SIMULATE_ONLY)
-        if action == ActionType.OPEN_URL:
-            kinds.append(TransformKind.DOMAIN_WHITELIST)
-        if time_limit:
-            kinds.append(TransformKind.TIME_LIMITED)
-        if not kinds:
-            kinds.append(TransformKind.NONE)
-        return kinds
+        by_level: dict[SensitivityLevel, list[TransformKind]] = {
+            SensitivityLevel.LOW: [TransformKind.ALLOW],
+            SensitivityLevel.MEDIUM: [
+                TransformKind.ALLOW_LIMITED_SCOPE,
+                TransformKind.PREVIEW_FIRST,
+            ],
+            SensitivityLevel.HIGH: [
+                TransformKind.MASK_SENSITIVE_FIELDS,
+                TransformKind.SANDBOX_COPY,
+                TransformKind.REQUIRE_CONFIRMATION,
+            ],
+            SensitivityLevel.CRITICAL: [
+                TransformKind.READ_ONLY_MODE,
+                TransformKind.STRICT_ISOLATION,
+                TransformKind.REQUIRE_EXPLICIT_CONFIRMATION,
+            ],
+        }
+        kinds = by_level[sensitivity][:]
+        if decision == DecisionType.ALLOW:
+            return [TransformKind.ALLOW]
+        if decision == DecisionType.LIMITED:
+            return [k for k in kinds if k != TransformKind.REQUIRE_EXPLICIT_CONFIRMATION]
+        if decision == DecisionType.CONFIRM:
+            if TransformKind.REQUIRE_CONFIRMATION not in kinds:
+                kinds.append(TransformKind.REQUIRE_CONFIRMATION)
+            return kinds
+        return [TransformKind.READ_ONLY_MODE, TransformKind.STRICT_ISOLATION]
 
     def describe(self, kinds: list[TransformKind]) -> str:
-        if kinds == [TransformKind.NONE] or not kinds:
+        if not kinds:
             return "No transform applied."
         return "Apply: " + ", ".join(k.value for k in kinds)

@@ -15,6 +15,9 @@ class Settings(BaseSettings):
         Path(__file__).resolve().parent.parent.parent / "sandbox_workspace"
     )
     exec_timeout_sec: int = 8
+    enable_namespace_exec: bool = False
+    enable_container_exec: bool = True
+    container_image: str = "alpine:3.20"
     forgetting_lambda_per_hour: float = 0.015
 
     class Config:

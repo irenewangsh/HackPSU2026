@@ -40,6 +40,7 @@ def _mask_preview(text: str | None) -> str | None:
         out,
         flags=re.I,
     )
+    out = re.sub(r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b", "[PHONE_REDACTED]", out)
     out = re.sub(r"\b(?:sk_live|Bearer)\s+\S+", "[TOKEN_REDACTED]", out, flags=re.I)
     return out
 
@@ -90,12 +91,18 @@ class MediatorService:
         )
         cat = _primary_category(sens.categories)
         trust_bias = await self.memory.trust_bias(cat)
+        scenario_bias = await self.memory.scenario_bias(
+            task_type=req.task_type.value,
+            action_type=req.action_type.value,
+            sensitivity=sens.level.value,
+        )
+        combined_bias = max(-1.0, min(1.0, 0.6 * trust_bias + 0.4 * scenario_bias))
 
-        risk = self.risk.score(req, sens.level, trust_bias)
-        mem_trust = max(0.0, min(1.0, (trust_bias + 1) / 2))
+        risk = self.risk.score(req, sens.level, sens.domain_trust, combined_bias)
+        mem_trust = max(0.0, min(1.0, (combined_bias + 1) / 2))
         trust_state = self.envelope.compute(req, sens.level, mem_trust)
 
-        dec, need_mask, need_iso, time_lim = self.permission.decide(
+        dec, perm_state = self.permission.decide(
             composite_risk=risk.composite_score,
             envelope=trust_state.value,
             action=req.action_type,
@@ -103,30 +110,22 @@ class MediatorService:
         scope = self.permission.build_scope(req.action_type, dec)
 
         kinds = self.transforms.propose(
-            action=req.action_type,
             decision=dec,
-            need_mask=need_mask,
-            need_isolate=need_iso,
-            time_limit=time_lim,
+            sensitivity=sens.level,
         )
-        # Clean duplicate NONE
-        if len(kinds) > 1 and TransformKind.NONE in kinds:
-            kinds = [k for k in kinds if k != TransformKind.NONE]
-
-        expires = 300 if TransformKind.TIME_LIMITED in kinds else None
+        expires = 300 if dec in (DecisionType.LIMITED, DecisionType.CONFIRM) else None
         user_msg = _user_message(dec, sens.level, risk.composite_score, trust_state)
 
         permission = PermissionDecision(
             decision=dec,
+            permissions=perm_state,
             transforms=kinds,
             effective_scope=scope,
             user_message=user_msg,
             expires_in_seconds=expires,
         )
 
-        transformed = None
-        if dec in (DecisionType.TRANSFORM, DecisionType.PROMPT_USER) and need_mask:
-            transformed = _mask_preview(req.payload_preview)
+        transformed = _mask_preview(req.payload_preview)
 
         summary = f"{req.action_type.value} risk={risk.composite_score:.2f} -> {dec.value}"
         digest = policy_digest(
@@ -142,19 +141,25 @@ class MediatorService:
             f"action:{req.action_type.value}",
             f"sensitivity:{sens.level.value}",
         ]
-        if dec in (DecisionType.ALLOW, DecisionType.TRANSFORM):
+        if dec in (DecisionType.ALLOW, DecisionType.LIMITED):
             scopes.append("hook:execute")
-        if dec == DecisionType.PROMPT_USER:
+        if dec == DecisionType.CONFIRM:
             scopes.append("approval:pending")
         ttl = expires or 300
         cap_token = None
-        if dec in (DecisionType.ALLOW, DecisionType.TRANSFORM, DecisionType.PROMPT_USER):
+        if dec in (DecisionType.ALLOW, DecisionType.LIMITED, DecisionType.CONFIRM):
             cap_token = issue_capability(
                 request_id=req_id,
                 scopes=scopes,
                 policy_digest=digest,
                 ttl_seconds=ttl,
             )
+
+        scenario_profile = await self.memory.scenario_profile(
+            task_type=req.task_type.value,
+            action_type=req.action_type.value,
+            sensitivity=sens.level.value,
+        )
 
         await self.memory.append_audit(
             action_type=req.action_type.value,
@@ -177,8 +182,10 @@ class MediatorService:
             risk=risk,
             trust_envelope=trust_state,
             decision=permission,
+            masked_preview=transformed,
             transformed_payload_hint=transformed,
             audit_note=summary,
+            preference_memory=scenario_profile,
             capability_token=cap_token,
             policy_digest=digest,
             capability_scopes=scopes,
@@ -198,10 +205,10 @@ def _user_message(
     ]
     if dec == DecisionType.DENY:
         parts.append("Blocked: default deny for high-risk composition.")
-    elif dec == DecisionType.PROMPT_USER:
+    elif dec == DecisionType.CONFIRM:
         parts.append("User confirmation required before proceeding.")
-    elif dec == DecisionType.TRANSFORM:
-        parts.append("Proceeding with constrained transforms (mask / sandbox / time limit).")
+    elif dec == DecisionType.LIMITED:
+        parts.append("Proceeding in limited mode with constrained transforms.")
     else:
         parts.append("Within policy: allowed with ongoing monitoring.")
     return " ".join(parts)

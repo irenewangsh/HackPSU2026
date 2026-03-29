@@ -12,6 +12,7 @@ from pathlib import Path
 import aiosqlite
 
 from app.config import settings
+from app.native_policy import hash_chain_digest, move_replace, unlink_path, write_file
 
 
 def _decay(weight: float, last_ts: float, now: float) -> float:
@@ -48,7 +49,8 @@ class PreferenceMemory:
                     action_type TEXT NOT NULL,
                     decision TEXT NOT NULL,
                     composite_risk REAL NOT NULL,
-                    summary TEXT NOT NULL
+                    summary TEXT NOT NULL,
+                    chain_digest TEXT
                 )
                 """
             )
@@ -87,9 +89,32 @@ class PreferenceMemory:
                 )
                 """
             )
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS scenario_prefs (
+                    key TEXT PRIMARY KEY,
+                    task_type TEXT NOT NULL,
+                    action_type TEXT NOT NULL,
+                    sensitivity TEXT NOT NULL,
+                    allow_count INTEGER NOT NULL DEFAULT 0,
+                    deny_count INTEGER NOT NULL DEFAULT 0,
+                    ask_count INTEGER NOT NULL DEFAULT 0,
+                    last_ts REAL NOT NULL
+                )
+                """
+            )
             await db.commit()
+        await self._migrate_schema()
         await self._ensure_profile_defaults()
         await self.apply_forgetting_if_due()
+
+    async def _migrate_schema(self) -> None:
+        async with aiosqlite.connect(self.path) as db:
+            try:
+                await db.execute("ALTER TABLE audit ADD COLUMN chain_digest TEXT")
+            except aiosqlite.OperationalError:
+                pass
+            await db.commit()
 
     async def _ensure_profile_defaults(self) -> None:
         defaults = {
@@ -226,7 +251,149 @@ class PreferenceMemory:
                 await db.execute("DELETE FROM prefs WHERE category = ?", (category,))
             else:
                 await db.execute("DELETE FROM prefs")
+                await db.execute("DELETE FROM scenario_prefs")
             await db.commit()
+
+    async def scenario_bias(
+        self, *, task_type: str, action_type: str, sensitivity: str
+    ) -> float:
+        key = f"{task_type}|{action_type}|{sensitivity}"
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute(
+                """
+                SELECT allow_count, deny_count, ask_count
+                FROM scenario_prefs WHERE key = ?
+                """,
+                (key,),
+            )
+            row = await cur.fetchone()
+        if not row:
+            return 0.0
+        allow_count, deny_count, ask_count = [int(x) for x in row]
+        total = max(1, allow_count + deny_count + ask_count)
+        # Ask votes are neutral; confidence tempers the pull.
+        raw = (allow_count - deny_count) / total
+        confidence = min(1.0, total / 8.0)
+        if action_type in ("delete_file", "make_payment", "submit_form"):
+            raw = max(-0.3, min(0.15, raw))
+        return raw * confidence
+
+    async def record_scenario_feedback(
+        self,
+        *,
+        task_type: str,
+        action_type: str,
+        sensitivity: str,
+        outcome: str,  # allow | deny | ask
+    ) -> None:
+        key = f"{task_type}|{action_type}|{sensitivity}"
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute(
+                """
+                SELECT allow_count, deny_count, ask_count
+                FROM scenario_prefs WHERE key = ?
+                """,
+                (key,),
+            )
+            row = await cur.fetchone()
+            allow_count, deny_count, ask_count = (0, 0, 0)
+            if row:
+                allow_count, deny_count, ask_count = [int(x) for x in row]
+            if outcome == "allow":
+                allow_count = min(50, allow_count + 1)
+            elif outcome == "deny":
+                deny_count = min(50, deny_count + 1)
+            else:
+                ask_count = min(50, ask_count + 1)
+            await db.execute(
+                """
+                INSERT INTO scenario_prefs(
+                    key, task_type, action_type, sensitivity,
+                    allow_count, deny_count, ask_count, last_ts
+                )
+                VALUES(?,?,?,?,?,?,?,?)
+                ON CONFLICT(key) DO UPDATE SET
+                    allow_count = excluded.allow_count,
+                    deny_count = excluded.deny_count,
+                    ask_count = excluded.ask_count,
+                    last_ts = excluded.last_ts
+                """,
+                (
+                    key,
+                    task_type,
+                    action_type,
+                    sensitivity,
+                    allow_count,
+                    deny_count,
+                    ask_count,
+                    time.time(),
+                ),
+            )
+            await db.commit()
+
+    async def scenario_profile(
+        self, *, task_type: str, action_type: str, sensitivity: str
+    ) -> dict[str, object]:
+        key = f"{task_type}|{action_type}|{sensitivity}"
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute(
+                """
+                SELECT allow_count, deny_count, ask_count
+                FROM scenario_prefs WHERE key = ?
+                """,
+                (key,),
+            )
+            row = await cur.fetchone()
+        allow_count, deny_count, ask_count = (0, 0, 0)
+        if row:
+            allow_count, deny_count, ask_count = [int(x) for x in row]
+        total = allow_count + deny_count + ask_count
+        confidence = round(min(1.0, total / 8.0), 3)
+        bias = round(await self.scenario_bias(task_type=task_type, action_type=action_type, sensitivity=sensitivity), 3)
+        return {
+            "key": key,
+            "task_type": task_type,
+            "action_type": action_type,
+            "sensitivity": sensitivity,
+            "allow_count": allow_count,
+            "deny_count": deny_count,
+            "ask_count": ask_count,
+            "confidence": confidence,
+            "bias": bias,
+        }
+
+    async def list_scenario_profiles(self, limit: int = 80) -> list[dict[str, object]]:
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                """
+                SELECT key, task_type, action_type, sensitivity,
+                       allow_count, deny_count, ask_count, last_ts
+                FROM scenario_prefs ORDER BY last_ts DESC LIMIT ?
+                """,
+                (limit,),
+            )
+            rows = await cur.fetchall()
+        out: list[dict[str, object]] = []
+        for r in rows:
+            total = int(r["allow_count"]) + int(r["deny_count"]) + int(r["ask_count"])
+            confidence = round(min(1.0, total / 8.0), 3)
+            raw = (int(r["allow_count"]) - int(r["deny_count"])) / max(1, total)
+            bias = round(raw * confidence, 3)
+            out.append(
+                {
+                    "key": r["key"],
+                    "task_type": r["task_type"],
+                    "action_type": r["action_type"],
+                    "sensitivity": r["sensitivity"],
+                    "allow_count": int(r["allow_count"]),
+                    "deny_count": int(r["deny_count"]),
+                    "ask_count": int(r["ask_count"]),
+                    "confidence": confidence,
+                    "bias": bias,
+                }
+            )
+        return out
 
     async def append_audit(
         self,
@@ -237,9 +404,25 @@ class PreferenceMemory:
         summary: str,
     ) -> int:
         async with aiosqlite.connect(self.path) as db:
+            cur_prev = await db.execute(
+                "SELECT chain_digest FROM audit ORDER BY id DESC LIMIT 1"
+            )
+            prev = await cur_prev.fetchone()
+            prev_digest = str(prev[0]) if prev and prev[0] else "0000000000000000"
+            entry = (
+                f"{action_type}|{decision}|{composite_risk:.6f}|{summary}|{time.time():.6f}"
+            )
+            chain_digest = hash_chain_digest(prev_digest, entry)
             cur = await db.execute(
-                "INSERT INTO audit(ts, action_type, decision, composite_risk, summary) VALUES(?,?,?,?,?)",
-                (time.time(), action_type, decision, composite_risk, summary),
+                "INSERT INTO audit(ts, action_type, decision, composite_risk, summary, chain_digest) VALUES(?,?,?,?,?,?)",
+                (
+                    time.time(),
+                    action_type,
+                    decision,
+                    composite_risk,
+                    summary,
+                    chain_digest,
+                ),
             )
             await db.commit()
             return int(cur.lastrowid)
@@ -335,23 +518,31 @@ class PreferenceMemory:
                 src, dst = inv["from"], inv["to"]
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 if os.path.exists(src):
-                    os.replace(src, dst)
+                    ok, err = move_replace(src, dst)
+                    if not ok:
+                        return {"ok": False, "error": err}
             elif kind == "unlink":
                 path = inv["path"]
                 if os.path.lexists(path):
-                    os.unlink(path)
+                    ok, err = unlink_path(path)
+                    if not ok:
+                        return {"ok": False, "error": err}
             elif kind == "write_restore":
                 path = inv["path"]
                 prev = inv.get("previous_content_b64")
                 if prev is None:
                     if os.path.exists(path):
-                        os.unlink(path)
+                        ok, err = unlink_path(path)
+                        if not ok:
+                            return {"ok": False, "error": err}
                 else:
                     import base64
 
                     raw = base64.b64decode(prev.encode("ascii"))
                     Path(path).parent.mkdir(parents=True, exist_ok=True)
-                    Path(path).write_bytes(raw)
+                    ok, err = write_file(path, raw)
+                    if not ok:
+                        return {"ok": False, "error": err}
             else:
                 return {"ok": False, "error": f"unknown inverse kind {kind}"}
         except OSError as e:
@@ -369,7 +560,7 @@ class PreferenceMemory:
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
-                "SELECT id, ts, action_type, decision, composite_risk, summary FROM audit ORDER BY id DESC LIMIT ?",
+                "SELECT id, ts, action_type, decision, composite_risk, summary, chain_digest FROM audit ORDER BY id DESC LIMIT ?",
                 (limit,),
             )
             rows = await cur.fetchall()

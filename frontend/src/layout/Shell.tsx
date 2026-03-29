@@ -77,8 +77,7 @@ export function Shell() {
           )}
         </nav>
         <div className="border-t border-stone-200/60 p-4 font-sans text-[11px] leading-relaxed text-forest-600/70">
-          Light canvas · frosted panels · sage &amp; paper — editorial, not a dark
-          console.
+          SentinelOS: Between intention and impact, a quiet layer of care.
         </div>
       </aside>
 

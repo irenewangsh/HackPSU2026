@@ -26,7 +26,14 @@ class ProgressiveTrustEnvelope:
             v -= 0.25
             shrunk.append("high data sensitivity")
 
-        if req.action_type in (ActionType.SHELL, ActionType.PAYMENT, ActionType.LOGIN):
+        if req.action_type in (
+            ActionType.RUN_SHELL,
+            ActionType.MAKE_PAYMENT,
+            ActionType.LOGIN,
+            ActionType.SUBMIT_FORM,
+            ActionType.DELETE_FILE,
+            ActionType.SHARE_DATA,
+        ):
             v -= 0.35
             shrunk.append("high-privilege or irreversible action class")
 
@@ -34,7 +41,12 @@ class ProgressiveTrustEnvelope:
             v -= 0.12
             shrunk.append("untrusted environment")
 
-        if req.action_type in (ActionType.READ_FILE, ActionType.MOVE_FILE):
+        if req.action_type in (
+            ActionType.READ_FILE,
+            ActionType.MOVE_FILE,
+            ActionType.CLASSIFY_FILE,
+            ActionType.RENAME_FILE,
+        ):
             v += 0.05
             factors.append("reversible read/move tends to widen envelope slightly")
 

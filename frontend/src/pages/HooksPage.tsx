@@ -6,14 +6,19 @@ const inp =
 
 export function HooksPage() {
   const [file, setFile] = useState({
-    action_type: "read_file" as "read_file" | "write_file" | "move_file",
+    action_type: "read_file" as
+      | "read_file"
+      | "classify_file"
+      | "move_file"
+      | "rename_file"
+      | "delete_file",
     source_path: "demo/a.txt",
     dest_path: "demo/b.txt",
-    content_b64: "",
     dry_run: true,
   });
   const [url, setUrl] = useState("https://example.com");
   const [argv, setArgv] = useState("uname -a");
+  const [capToken, setCapToken] = useState("");
   const [out, setOut] = useState<string>("");
 
   return (
@@ -31,6 +36,14 @@ export function HooksPage() {
 
       <section className="glass-panel space-y-4 p-7">
         <h2 className="font-serif text-xl font-semibold text-forest-900">File hook</h2>
+        <label className="font-sans text-xs text-forest-700/85">
+          capability_token (required when dry_run=false)
+          <input
+            className={inp}
+            value={capToken}
+            onChange={(e) => setCapToken(e.target.value)}
+          />
+        </label>
         <div className="grid gap-3 md:grid-cols-2">
           <label className="font-sans text-xs text-forest-700/85">
             action
@@ -45,8 +58,10 @@ export function HooksPage() {
               }
             >
               <option value="read_file">read_file</option>
-              <option value="write_file">write_file</option>
+              <option value="classify_file">classify_file</option>
               <option value="move_file">move_file</option>
+              <option value="rename_file">rename_file</option>
+              <option value="delete_file">delete_file</option>
             </select>
           </label>
           <label className="font-sans text-xs text-forest-700/85">
@@ -78,14 +93,6 @@ export function HooksPage() {
               onChange={(e) => setFile((f) => ({ ...f, dest_path: e.target.value }))}
             />
           </label>
-          <label className="font-sans text-xs text-forest-700/85 md:col-span-2">
-            content_b64 (write only)
-            <input
-              className={inp}
-              value={file.content_b64}
-              onChange={(e) => setFile((f) => ({ ...f, content_b64: e.target.value }))}
-            />
-          </label>
         </div>
         <button
           type="button"
@@ -93,6 +100,7 @@ export function HooksPage() {
           onClick={async () => {
             const r = await hookFile({
               ...file,
+              capability_token: capToken || undefined,
               mime_type: "text/plain",
             });
             setOut(JSON.stringify(r, null, 2));
@@ -115,7 +123,17 @@ export function HooksPage() {
           type="button"
           className="rounded-xl border border-violet-200/90 bg-violet-50/95 px-4 py-2.5 font-sans text-sm font-medium text-violet-900 shadow-sm hover:bg-violet-100/90"
           onClick={async () =>
-            setOut(JSON.stringify(await hookBrowser({ target_url: url }), null, 2))
+            setOut(
+              JSON.stringify(
+                await hookBrowser({
+                  target_url: url,
+                  capability_token: capToken || undefined,
+                  automate: false,
+                }),
+                null,
+                2
+              )
+            )
           }
         >
           Mediate URL
@@ -136,7 +154,11 @@ export function HooksPage() {
           onClick={async () =>
             setOut(
               JSON.stringify(
-                await hookExec({ argv: argv.trim().split(/\s+/) }),
+                await hookExec({
+                  argv: argv.trim().split(/\s+/),
+                  capability_token: capToken || undefined,
+                  prefer_container: true,
+                }),
                 null,
                 2
               )

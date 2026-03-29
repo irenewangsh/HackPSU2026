@@ -2,18 +2,27 @@ const API = "";
 
 export type ActionType =
   | "read_file"
-  | "write_file"
+  | "classify_file"
   | "move_file"
-  | "open_url"
-  | "paste"
-  | "shell"
-  | "upload"
-  | "form_submit"
+  | "rename_file"
+  | "upload_file"
+  | "run_shell"
+  | "open_website"
   | "login"
-  | "payment";
+  | "paste_content"
+  | "submit_form"
+  | "make_payment"
+  | "delete_file"
+  | "share_data";
+
+export type TaskType =
+  | "general"
+  | "coursework_organizer"
+  | "financial_assistant";
 
 export interface AgentActionRequest {
   action_type: ActionType;
+  task_type?: TaskType;
   target_path?: string | null;
   target_url?: string | null;
   mime_type?: string | null;
@@ -28,12 +37,14 @@ export interface MediationResult {
   request_id: string;
   sensitivity: {
     level: string;
+    domain_trust: string;
     categories: string[];
     signals: string[];
   };
   risk: {
     action_risk: number;
     data_risk: number;
+    risk_score: number;
     composite_score: number;
     reasons: string[];
   };
@@ -44,13 +55,32 @@ export interface MediationResult {
   };
   decision: {
     decision: string;
+    permissions: {
+      file_read_write: string;
+      execution: string;
+      network: string;
+      review_required: boolean;
+      limited_mode_only: boolean;
+    };
     transforms: string[];
     effective_scope: Record<string, unknown>;
     user_message: string;
     expires_in_seconds: number | null;
   };
+  masked_preview?: string | null;
   transformed_payload_hint: string | null;
   audit_note: string;
+  preference_memory?: {
+    key: string;
+    task_type: string;
+    action_type: string;
+    sensitivity: string;
+    allow_count: number;
+    deny_count: number;
+    ask_count: number;
+    confidence: number;
+    bias: number;
+  };
   capability_token?: string | null;
   policy_digest?: string | null;
   capability_scopes?: string[];
@@ -95,7 +125,11 @@ export async function fetchAudit(limit = 40) {
 
 export async function sendFeedback(p: {
   request_id: string;
-  accepted: boolean;
+  accepted?: boolean;
+  outcome?: "allow" | "ask" | "deny";
+  task_type: TaskType;
+  action_type: ActionType;
+  sensitivity: "low" | "medium" | "high" | "critical";
   scenario_category: string;
 }) {
   const r = await fetch(`${API}/api/v1/feedback`, {
@@ -105,6 +139,24 @@ export async function sendFeedback(p: {
   });
   if (!r.ok) throw new Error("feedback failed");
   return r.json();
+}
+
+export async function fetchPreferenceMemory(limit = 80) {
+  const r = await fetch(`${API}/api/v1/analytics/preference-memory?limit=${limit}`);
+  if (!r.ok) throw new Error("preference-memory failed");
+  return r.json() as Promise<{
+    items: {
+      key: string;
+      task_type: string;
+      action_type: string;
+      sensitivity: string;
+      allow_count: number;
+      deny_count: number;
+      ask_count: number;
+      confidence: number;
+      bias: number;
+    }[];
+  }>;
 }
 
 export async function resetPrefs(category: string | null) {
@@ -224,7 +276,13 @@ export async function hookFile(body: Record<string, unknown>) {
   return r.json();
 }
 
-export async function hookBrowser(body: { target_url: string }) {
+export async function hookBrowser(body: {
+  target_url: string;
+  capability_token?: string | null;
+  automate?: boolean;
+  timeout_sec?: number;
+  steps?: Array<Record<string, unknown>>;
+}) {
   const r = await fetch(`${API}/api/v1/hooks/browser`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -234,7 +292,11 @@ export async function hookBrowser(body: { target_url: string }) {
   return r.json();
 }
 
-export async function hookExec(body: { argv: string[] }) {
+export async function hookExec(body: {
+  argv: string[];
+  capability_token?: string | null;
+  prefer_container?: boolean;
+}) {
   const r = await fetch(`${API}/api/v1/hooks/exec`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
