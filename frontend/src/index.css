@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  scroll-behavior: smooth;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  min-height: 100vh;
+  background-color: #f2f0e9;
+  background-image: radial-gradient(
+      ellipse 100% 80% at 10% 5%,
+      rgba(210, 228, 218, 0.5) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse 90% 70% at 92% 12%,
+      rgba(228, 222, 236, 0.4) 0%,
+      transparent 50%
+    ),
+    linear-gradient(180deg, #f2f0e9 0%, #ebe8e0 55%, #e6e2d8 100%);
+  background-attachment: fixed;
+}
+
+/*
+  Optional: replace public/watercolor-landscape.svg with your own wide illustration
+  (JPG/PNG/SVG). Update the background-image in IntroPage if you use a different filename.
+*/
+
+/* Frosted cards on light canvas — editorial, not terminal */
+.glass-panel {
+  @apply rounded-2xl border border-stone-200/70 bg-white/75 shadow-glass backdrop-blur-xl;
+}
+
+.glass-panel-soft {
+  @apply rounded-2xl border border-sage-200/50 bg-gradient-to-br from-white/90 to-paper-2/95 shadow-glass backdrop-blur-md;
+}
+
+/* Wordmark: sage into forest — readable on paper */
+.text-gradient {
+  @apply bg-gradient-to-r from-sage-600 via-sage-500 to-forest-800 bg-clip-text text-transparent;
+}
+
+.text-body {
+  @apply text-forest-800/95;
+}
+
+.text-muted {
+  @apply text-forest-600/85;
+}
+
+/* Opening page — Cormorant Garamond display (see tailwind font-display) */
+.experience-poetry {
+  font-family: theme("fontFamily.display");
+  font-feature-settings: "kern" 1, "liga" 1, "dlig" 1;
+  text-wrap: balance;
+}
+
+/* Fine grain overlay — watercolor-paper feel (low contrast) */
+.intro-paper-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  background-size: 220px 220px;
+}

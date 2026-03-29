@@ -1,0 +1,158 @@
+{
+  "info": {
+    "name": "SentinelOS",
+    "description": "Supervisory control plane for OS agents — use with backend at http://127.0.0.1:8000",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base", "value": "http://127.0.0.1:8000" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base}}/health"
+      }
+    },
+    {
+      "name": "Mediate — organize PDFs (medium risk)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"action_type\": \"move_file\",\n  \"target_path\": \"/Users/me/Downloads/CMPSC311_assignment.pdf\",\n  \"mime_type\": \"application/pdf\",\n  \"overwrite\": false,\n  \"session_id\": \"demo\",\n  \"environment_hint\": \"home\"\n}"
+        },
+        "url": "{{base}}/api/v1/mediate"
+      }
+    },
+    {
+      "name": "Mediate — bank / payment (critical)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"action_type\": \"payment\",\n  \"target_url\": \"https://chase.com/pay/bill\",\n  \"payload_preview\": \"Pay $240.00 to ACME from account ****1234\",\n  \"form_field_names\": [\"routing\", \"account\", \"amount\"],\n  \"session_id\": \"demo\"\n}"
+        },
+        "url": "{{base}}/api/v1/mediate"
+      }
+    },
+    {
+      "name": "Feedback — record user choice",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"request_id\": \"any-id\",\n  \"accepted\": true,\n  \"scenario_category\": \"coursework\",\n  \"notes\": \"user ok for class files\"\n}"
+        },
+        "url": "{{base}}/api/v1/feedback"
+      }
+    },
+    {
+      "name": "Reset preferences",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"category\": null\n}"
+        },
+        "url": "{{base}}/api/v1/preferences/reset"
+      }
+    },
+    {
+      "name": "Trust bias for category",
+      "request": {
+        "method": "GET",
+        "url": "{{base}}/api/v1/trust/coursework"
+      }
+    },
+    {
+      "name": "Audit log",
+      "request": {
+        "method": "GET",
+        "url": "{{base}}/api/v1/audit?limit=20"
+      }
+    },
+    {
+      "name": "Hook — read file (sandbox)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"action_type\": \"read_file\",\n  \"source_path\": \"demo/a.txt\",\n  \"dry_run\": false\n}"
+        },
+        "url": "{{base}}/api/v1/hooks/file"
+      }
+    },
+    {
+      "name": "Hook — browser URL",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"target_url\": \"https://chase.com/login\"\n}"
+        },
+        "url": "{{base}}/api/v1/hooks/browser"
+      }
+    },
+    {
+      "name": "Hook — exec (sandbox cwd)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"argv\": [\"uname\", \"-a\"]\n}"
+        },
+        "url": "{{base}}/api/v1/hooks/exec"
+      }
+    },
+    {
+      "name": "Analytics — heatmap",
+      "request": {
+        "method": "GET",
+        "url": "{{base}}/api/v1/analytics/heatmap"
+      }
+    },
+    {
+      "name": "Analytics — authority timeline",
+      "request": {
+        "method": "GET",
+        "url": "{{base}}/api/v1/analytics/authority-timeline?limit=50"
+      }
+    },
+    {
+      "name": "Operations — list",
+      "request": {
+        "method": "GET",
+        "url": "{{base}}/api/v1/operations?limit=20"
+      }
+    },
+    {
+      "name": "Profile — get",
+      "request": {
+        "method": "GET",
+        "url": "{{base}}/api/v1/profile"
+      }
+    },
+    {
+      "name": "Capability — verify token",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"token\": \"PASTE_FROM_MEDIATION_RESPONSE\"\n}"
+        },
+        "url": "{{base}}/api/v1/capability/verify"
+      }
+    }
+  ]
+}

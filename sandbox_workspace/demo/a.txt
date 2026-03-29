@@ -1,0 +1,1 @@
+SentinelOS sandbox seed file — safe to read/move during demos.
