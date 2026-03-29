@@ -2,7 +2,9 @@
 
 *HackPSU 2026 submission.*
 
-**SentinelOS** is a FastAPI service that mediates proposed OS surface work (files under a sandbox workspace, browser URLs, process launches) before anything hits the real filesystem or shell. For each action it computes sensitivity and risk, may apply safety transforms, and returns an allow, deny, prompt user, or transform outcome plus a progressive trust envelope signal. SQLite stores user preference weights with decay, an audit log, an authority timeline, reversible operation records, and profile data. **Capability tokens** are HMAC scoped to policy digests so agents carry provable, short lived permissions. A **C shared library** (loaded via ctypes) performs path normalization and containment checks, filesystem probes, and sandboxed `fork`/`execve`; the backend falls back to Python when the native build is not present. The React console exposes mediation, hook status, risk heatmap, timeline, audit log, rollback, profile, and demo helpers against the same APIs.
+**Tagline:** *Between intention and impact, a quiet layer of care.*
+
+**SentinelOS** is a FastAPI supervisory control plane that mediates OS-facing agent actions (files under a sandbox workspace, browser URLs, process launches) before anything hits the real filesystem or shell. For each action it computes sensitivity and risk, suggests transforms, and returns a policy decision with permission scope. SQLite stores preference memory with decay, an append-only audit trail, authority timeline events, and reversible operation records. **Capability tokens** are HMAC scoped to policy digests so agents carry short-lived, verifiable permissions. A **native C shared library** (loaded via `ctypes`) handles path mediation, filesystem probes, hashing, capability guards, and sandboxed process primitives; Python paths remain as resilience fallback when native loading is unavailable. The React console exposes mediation, hooks, risk heatmap, timeline, audit, rollback, profile, and demo helpers against the same APIs.
 
 ---
 
@@ -106,6 +108,8 @@ Optional overrides use the **`SENTINEL_`** prefix (see `backend/app/config.py`):
 | `SENTINEL_TOKEN_SECRET` | HMAC secret for capability tokens (**change in production**) |
 | `SENTINEL_SANDBOX_ROOT` | Root directory for mediated file/exec hooks |
 | `SENTINEL_EXEC_TIMEOUT_SEC` | Exec hook timeout (seconds) |
+| `SENTINEL_ENABLE_CONTAINER_EXEC` | Prefer Docker-isolated exec hook path when available |
+| `SENTINEL_ENABLE_NAMESPACE_EXEC` | Enable Linux namespace exec path (`unshare`) |
 | `SENTINEL_TRUST_DECAY_HALF_LIFE_HOURS` | Preference decay half-life |
 | `SENTINEL_MAX_MEMORY_ENTRIES` | Cap on stored memory rows |
 | `SENTINEL_FORGETTING_LAMBDA_PER_HOUR` | Profile forgetting rate (per hour) |
