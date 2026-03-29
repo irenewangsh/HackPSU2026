@@ -2,7 +2,7 @@
 
 *HackPSU 2026 submission.*
 
-**SentinelOS** is a supervisory control plane for OS-facing agents—not a second chat assistant. It sits between intent and the machine: policy, risk scoring, optional transforms, decaying preference memory, audit trails, reversible operations, and HMAC-backed **capability tokens**. A small **native C layer** handles path normalization, filesystem probes, and sandboxed process execution where available.
+**SentinelOS** is a FastAPI service that mediates proposed OS surface work (files under a sandbox workspace, browser URLs, process launches) before anything hits the real filesystem or shell. For each action it computes sensitivity and risk, may apply safety transforms, and returns an allow, deny, prompt user, or transform outcome plus a progressive trust envelope signal. SQLite stores user preference weights with decay, an audit log, an authority timeline, reversible operation records, and profile data. **Capability tokens** are HMAC scoped to policy digests so agents carry provable, short lived permissions. A **C shared library** (loaded via ctypes) performs path normalization and containment checks, filesystem probes, and sandboxed `fork`/`execve`; the backend falls back to Python when the native build is not present. The React console exposes mediation, hook status, risk heatmap, timeline, audit log, rollback, profile, and demo helpers against the same APIs.
 
 ---
 
